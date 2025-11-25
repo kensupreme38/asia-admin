@@ -15,31 +15,79 @@ export const employeeSchema = z.object({
   id,
   name: z.string().min(2, { message: "Name must be at least 2 characters." }),
   email: z.string().email({ message: "Invalid email address." }),
-  department: z.enum(['Human Resources', 'Engineering', 'Marketing', 'Sales']),
+  department: z.enum(['Human Resources', 'Engineering', 'Marketing', 'Sales', 'Operations', 'Finance']),
   jobTitle: z.string().min(2, { message: "Job title must be at least 2 characters." }),
+  phone: z.string().optional().or(z.literal('')),
+  dateOfBirth: z.string().optional().refine((val) => !val || !isNaN(Date.parse(val)), { message: "Invalid date" }),
+  gender: z.enum(['male', 'female', 'other']).optional(), // Updated to match asianightlife
+  address: z.string().optional().or(z.literal('')),
   startDate: z.string().refine((val) => !isNaN(Date.parse(val)), { message: "Invalid date" }),
   avatar: z.string().optional(),
+  // New fields from asianightlife schema
+  full_name: z.string().min(2, { message: "Full name must be at least 2 characters." }).optional(),
+  user_id: z.string().optional(),
+  referral_code: z.string().optional(),
+  created_at: z.string().optional(),
+  updated_at: z.string().optional(),
 });
 
 export const djSchema = z.object({
-  id,
-  stageName: z.string().min(2, { message: "Stage name must be at least 2 characters." }),
-  realName: z.string().min(2, { message: "Real name must be at least 2 characters." }),
-  genres: z.string().min(3, { message: "Genres must be at least 3 characters." }),
-  bookingContact: z.string().email({ message: "Invalid email address." }),
-  performanceCount: z.coerce.number().int().min(0, { message: "Performances must be a positive number." }),
+  id: z.string().optional(),
+  name: z.string().min(2, { message: "DJ name must be at least 2 characters." }),
+  image_url: z.string().optional(),
+  bio: z.string().optional().or(z.literal('')),
+  genres: z.array(z.string()).optional(), // Changed to array
+  country: z.string().optional().or(z.literal('')),
+  user_id: z.string().optional(),
+  is_active: z.boolean().optional(),
+  status: z.string().optional(),
+  created_at: z.string().optional(),
+  votes_count: z.number().optional(),
+  // Backward compatibility
+  stageName: z.string().optional(),
+  realName: z.string().optional(),
+  avatar: z.string().optional(),
+  bookingContact: z.string().optional(),
+  performanceCount: z.number().optional(),
+});
+
+// Password policy: at least 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special char
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+
+export const adminUserSchema = z.object({
+  id: z.string().optional(),
+  username: z.string().min(3, { message: "Username must be at least 3 characters." }),
+  password: z.string()
+    .min(8, { message: "Password must be at least 8 characters." })
+    .regex(passwordRegex, {
+      message: "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)."
+    })
+    .optional(),
+  full_name: z.string().min(2, { message: "Full name must be at least 2 characters." }).optional(),
+  email: z.string().email({ message: "Invalid email address." }).optional().or(z.literal('')),
+  role: z.string().min(1, { message: "Role is required." }),
+  permissions: z.record(z.any()).optional(),
+  is_active: z.boolean().optional(),
   avatar: z.string().optional(),
 });
 
+// Login schema
+export const loginSchema = z.object({
+  username: z.string().min(1, { message: "Username is required." }),
+  password: z.string().min(1, { message: "Password is required." }),
+});
+
 export function getSchema(entityName: string) {
-    switch (entityName) {
-      case 'User':
-        return userSchema;
-      case 'Employee':
-        return employeeSchema;
-      case 'DJ':
-        return djSchema;
-      default:
-        throw new Error(`Unknown entity: ${entityName}`);
-    }
+  switch (entityName) {
+    case 'User':
+      return userSchema;
+    case 'Employee':
+      return employeeSchema;
+    case 'DJ':
+      return djSchema;
+    case 'AdminUser':
+      return adminUserSchema;
+    default:
+      throw new Error(`Unknown entity: ${entityName}`);
   }
+}

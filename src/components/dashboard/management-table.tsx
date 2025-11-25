@@ -82,6 +82,7 @@ import { useToast } from "@/hooks/use-toast";
 import type { ManageableEntity, FormFieldConfig, ColumnConfig } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getSchema } from "@/lib/schemas";
+import { useRouter } from "next/navigation";
 
 interface ManagementTableProps<T extends ManageableEntity> {
   entityName: string;
@@ -91,6 +92,17 @@ interface ManagementTableProps<T extends ManageableEntity> {
   searchField: keyof T;
 }
 
+// Map entity names to API endpoints
+const getApiEndpoint = (entityName: string): string => {
+  const endpointMap: Record<string, string> = {
+    'User': '/api/admin/users',
+    'AdminUser': '/api/admin/users',
+    'Employee': '/api/admin/employees',
+    'DJ': '/api/admin/djs',
+  };
+  return endpointMap[entityName] || '/api/admin/users';
+};
+
 export function ManagementTable<T extends ManageableEntity>({
   entityName,
   initialData,
@@ -99,17 +111,19 @@ export function ManagementTable<T extends ManageableEntity>({
   searchField,
 }: ManagementTableProps<T>) {
   const { toast } = useToast();
+  const router = useRouter();
   const [data, setData] = React.useState<T[]>(initialData);
   const [searchTerm, setSearchTerm] = React.useState("");
   const [isDialogOpen, setDialogOpen] = React.useState(false);
   const [isAlertOpen, setAlertOpen] = React.useState(false);
   const [selectedItem, setSelectedItem] = React.useState<T | null>(null);
   const [itemToDelete, setItemToDelete] = React.useState<string | null>(null);
+  const [isLoading, setIsLoading] = React.useState(false);
 
   const formSchema = getSchema(entityName);
 
   const form = useForm<T>({
-    resolver: zodResolver(formSchema as ZodSchema<T>),
+    resolver: zodResolver(formSchema as unknown as ZodSchema<T>),
   });
 
   const handleAddNew = () => {
@@ -120,7 +134,29 @@ export function ManagementTable<T extends ManageableEntity>({
 
   const handleEdit = (item: T) => {
     setSelectedItem(item);
-    form.reset(item);
+    // Map item data for form based on entity type
+    let formData: any = { ...item };
+    
+    if (entityName === 'User' || entityName === 'AdminUser') {
+      // Map User type to AdminUser form fields
+      formData = {
+        ...item,
+        username: (item as any).username || (item as any).name || '',
+        full_name: (item as any).full_name || (item as any).name || '',
+        email: (item as any).email || '',
+        role: (item as any).role?.toLowerCase() || 'member',
+        password: '', // Don't pre-fill password for security
+      };
+    } else if (entityName === 'Employee') {
+      // Map date_of_birth to dateOfBirth for form
+      formData = {
+        ...item,
+        full_name: (item as any).full_name || (item as any).name || '',
+        dateOfBirth: (item as any).date_of_birth || (item as any).dateOfBirth,
+      };
+    }
+    
+    form.reset(formData);
     setDialogOpen(true);
   };
 
@@ -129,34 +165,255 @@ export function ManagementTable<T extends ManageableEntity>({
     setAlertOpen(true);
   };
 
-  const confirmDelete = () => {
-    if (itemToDelete) {
+  const confirmDelete = async () => {
+    if (!itemToDelete) {
+      setAlertOpen(false);
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      const apiEndpoint = getApiEndpoint(entityName);
+      console.log(`[DELETE] Attempting to delete ${entityName} with ID: ${itemToDelete}`);
+      console.log(`[DELETE] API endpoint: ${apiEndpoint}/${itemToDelete}`);
+      
+      const response = await fetch(`${apiEndpoint}/${itemToDelete}`, {
+        method: 'DELETE',
+      });
+
+      console.log(`[DELETE] Response status: ${response.status}, ok: ${response.ok}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error('[DELETE] Error response:', errorData);
+        
+        // Check if it's an RLS/permissions issue
+        if (errorData.error && errorData.error.includes('RLS') || errorData.error.includes('permissions')) {
+          // Try to check environment setup
+          try {
+            const envCheck = await fetch('/api/admin/check-env');
+            if (envCheck.ok) {
+              const envData = await envCheck.json();
+              if (!envData.hasServiceRoleKey) {
+                throw new Error(
+                  'Service Role Key is not configured. Please add SUPABASE_SERVICE_ROLE_KEY to .env.local and restart the server. See ENV_SETUP.md for instructions.'
+                );
+              }
+            }
+          } catch (envErr) {
+            // Ignore env check errors
+          }
+        }
+        
+        throw new Error(errorData.error || 'Failed to delete');
+      }
+
+      const result = await response.json();
+      console.log('[DELETE] Success response:', result);
+
+      // Remove from local state immediately for better UX
       setData(data.filter((item) => item.id !== itemToDelete));
+      
       toast({
         title: `${entityName} Deleted`,
         description: `The ${entityName.toLowerCase()} has been successfully deleted.`,
       });
+
+      // Refresh the page to get updated data
+      router.refresh();
+    } catch (error: any) {
+      console.error('[DELETE] Error deleting:', error);
+      console.error('[DELETE] Error stack:', error.stack);
+      toast({
+        title: 'Error',
+        description: error.message || `Failed to delete ${entityName.toLowerCase()}.`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+      setAlertOpen(false);
+      setItemToDelete(null);
     }
-    setAlertOpen(false);
-    setItemToDelete(null);
   };
 
-  const onSubmit = (values: T) => {
+  const onSubmit = async (values: T) => {
     const isEditing = !!selectedItem;
-    const newValues = { ...values, id: selectedItem?.id || `new-${Date.now()}` };
+    setIsLoading(true);
 
-    if (isEditing) {
-      setData(data.map((item) => (item.id === selectedItem.id ? newValues : item)));
-    } else {
-      setData([newValues, ...data]);
-    }
-    
-    toast({
+    try {
+      const apiEndpoint = getApiEndpoint(entityName);
+      const method = isEditing ? 'PUT' : 'POST';
+      const url = isEditing ? `${apiEndpoint}/${selectedItem.id}` : apiEndpoint;
+
+      // Prepare payload based on entity type
+      let payload: any = { ...values };
+      
+      // Remove id from payload for POST requests
+      if (!isEditing) {
+        delete payload.id;
+      }
+
+      // Map fields for different entity types
+      if (entityName === 'User' || entityName === 'AdminUser') {
+        // For new users, password is required
+        if (!isEditing && !payload.password) {
+          return toast({
+            title: 'Error',
+            description: 'Password is required when creating a new user.',
+            variant: 'destructive',
+          });
+        }
+        // For editing, only include password if provided
+        if (isEditing && (!payload.password || payload.password.trim() === '')) {
+          delete payload.password; // Don't update password if empty
+        }
+        // Remove fields not used in API
+        delete payload.joinDate;
+        delete payload.avatar;
+        delete payload.id; // Remove id for POST requests
+      } else if (entityName === 'Employee') {
+        // Map dateOfBirth to date_of_birth for database
+        if (payload.dateOfBirth) {
+          payload.date_of_birth = payload.dateOfBirth;
+          delete payload.dateOfBirth;
+        }
+        // Use full_name if available, otherwise use name
+        if (payload.full_name || payload.name) {
+          payload.full_name = payload.full_name || payload.name;
+        }
+        // Remove fields not used in API
+        delete payload.name; // Remove name, use full_name instead
+        delete payload.avatar;
+        delete payload.department;
+        delete payload.jobTitle;
+        delete payload.startDate;
+        delete payload.id; // Remove id for POST requests
+      } else if (entityName === 'DJ') {
+        // For DJs, ensure is_active and status are set
+        if (payload.is_active === undefined) {
+          payload.is_active = true;
+        }
+        if (!payload.status) {
+          payload.status = 'active';
+        }
+      }
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to ${isEditing ? 'update' : 'create'}`);
+      }
+
+      const result = await response.json();
+
+      // Update local state for immediate UI feedback
+      if (isEditing) {
+        // Map the API result to entity format
+        const mappedResult = mapApiResponseToEntity(result, entityName);
+        setData(data.map((item) => (item.id === selectedItem.id ? mappedResult : item)));
+      } else {
+        // Map the result back to our type format
+        const mappedResult = mapApiResponseToEntity(result, entityName);
+        setData([mappedResult, ...data]);
+      }
+
+      toast({
         title: isEditing ? `${entityName} Updated` : `${entityName} Added`,
         description: `The ${entityName.toLowerCase()} has been successfully ${isEditing ? 'updated' : 'added'}.`,
-    });
-    setDialogOpen(false);
-    setSelectedItem(null);
+      });
+
+      setDialogOpen(false);
+      setSelectedItem(null);
+      
+      // Refresh the page to get updated data
+      router.refresh();
+    } catch (error: any) {
+      console.error('Error saving:', error);
+      toast({
+        title: 'Error',
+        description: error.message || `Failed to ${isEditing ? 'update' : 'create'} ${entityName.toLowerCase()}.`,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Helper function to map API response to entity format
+  const mapApiResponseToEntity = (apiData: any, entityType: string): T => {
+    if (entityType === 'User' || entityType === 'AdminUser') {
+      // Map admin_users response to User type
+      let mappedRole: 'Admin' | 'Member' | 'Guest' = 'Member';
+      if (apiData.role) {
+        const roleLower = apiData.role.toLowerCase();
+        if (roleLower.includes('admin') || roleLower.includes('super')) {
+          mappedRole = 'Admin';
+        } else if (roleLower.includes('moderator') || roleLower.includes('member')) {
+          mappedRole = 'Member';
+        } else {
+          mappedRole = 'Guest';
+        }
+      }
+      
+      const avatarSeed = apiData.username || apiData.id?.toString() || 'default';
+      const avatarNumber = Math.abs(avatarSeed.split('').reduce((acc: number, char: string) => acc + char.charCodeAt(0), 0)) % 25 + 1;
+      
+      return {
+        id: apiData.id?.toString() || '',
+        name: apiData.full_name || apiData.username || '',
+        email: apiData.email || '',
+        avatar: String(avatarNumber),
+        role: mappedRole,
+        joinDate: apiData.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+        // Include AdminUser fields for form compatibility
+        username: apiData.username,
+        full_name: apiData.full_name,
+      } as T;
+    } else if (entityType === 'Employee') {
+      return {
+        id: apiData.id?.toString() || '',
+        name: apiData.full_name || apiData.email?.split('@')[0] || 'Unknown',
+        full_name: apiData.full_name,
+        email: apiData.email || '',
+        avatar: String(Math.floor(Math.random() * 25) + 1),
+        department: 'Engineering' as const,
+        jobTitle: 'Employee',
+        phone: apiData.phone,
+        dateOfBirth: apiData.date_of_birth || apiData.dateOfBirth,
+        gender: apiData.gender,
+        address: apiData.address,
+        startDate: apiData.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+        user_id: apiData.user_id,
+        referral_code: apiData.referral_code,
+        created_at: apiData.created_at,
+        updated_at: apiData.updated_at,
+      } as T;
+    } else if (entityType === 'DJ') {
+      return {
+        id: apiData.id?.toString() || '',
+        name: apiData.name,
+        stageName: apiData.name,
+        image_url: apiData.image_url,
+        avatar: apiData.image_url || String(Math.floor(Math.random() * 25) + 1),
+        bio: apiData.bio,
+        genres: apiData.genres || [],
+        country: apiData.country,
+        user_id: apiData.user_id,
+        is_active: apiData.is_active,
+        status: apiData.status,
+        created_at: apiData.created_at,
+        votes_count: 0,
+        performanceCount: 0,
+      } as T;
+    }
+    return apiData as T;
   };
 
   const filteredData = React.useMemo(() => {
@@ -189,18 +446,29 @@ export function ManagementTable<T extends ManageableEntity>({
       );
     }
     if (accessor === 'role' || accessor === 'department') {
-        let variant: "default" | "secondary" | "destructive" | "outline" = "default";
-        if (value === 'Admin' || value === 'Engineering') variant = "primary";
-        if (value === 'Member' || value === 'Marketing') variant = "secondary";
-        if (value === 'Guest' || value === 'Sales') variant = "outline";
-        return <Badge variant={variant}>{value as string}</Badge>;
+      let variant: "default" | "secondary" | "destructive" | "outline" = "default";
+      if (value === 'Admin' || value === 'Engineering') variant = "default";
+      if (value === 'Member' || value === 'Marketing') variant = "secondary";
+      if (value === 'Guest' || value === 'Sales') variant = "outline";
+      return <Badge variant={variant}>{value as string}</Badge>;
+    }
+    if (accessor === 'gender') {
+      if (!value) return <span className="text-muted-foreground">-</span>;
+      let variant: "default" | "secondary" | "destructive" | "outline" = "outline";
+      if (value === 'Male') variant = "default";
+      if (value === 'Female') variant = "secondary";
+      return <Badge variant={variant}>{value as string}</Badge>;
+    }
+    if (accessor === 'phone' || accessor === 'address') {
+      if (!value || value === '') return <span className="text-muted-foreground">-</span>;
+      return value as string;
     }
     if (typeof value === 'number') {
-        return value.toString();
+      return value.toString();
     }
     return value as string;
   };
-  
+
   return (
     <Card>
       <CardHeader>
@@ -230,9 +498,13 @@ export function ManagementTable<T extends ManageableEntity>({
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
-                <DialogTitle>{selectedItem ? "Edit" : "Add"} {entityName}</DialogTitle>
+                <DialogTitle>
+                  {selectedItem ? "Edit" : "Add"} {entityName || "Item"}
+                </DialogTitle>
                 <DialogDescription>
-                  {selectedItem ? "Update the details below." : `Enter the details for the new ${entityName.toLowerCase()}.`}
+                  {selectedItem 
+                    ? "Update the details below." 
+                    : `Enter the details for the new ${entityName?.toLowerCase() || "item"}.`}
                 </DialogDescription>
               </DialogHeader>
               <Form {...form}>
@@ -260,35 +532,35 @@ export function ManagementTable<T extends ManageableEntity>({
                                 </SelectContent>
                               </Select>
                             ) : field.type === 'date' ? (
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <Button
-                                      variant={"outline"}
-                                      className={cn(
-                                        "w-full justify-start text-left font-normal",
-                                        !formField.value && "text-muted-foreground"
-                                      )}
-                                    >
-                                      <CalendarIcon className="mr-2 h-4 w-4" />
-                                      {formField.value ? format(new Date(formField.value), "PPP") : <span>Pick a date</span>}
-                                    </Button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-auto p-0" align="start">
-                                    <Calendar
-                                      mode="single"
-                                      selected={formField.value ? new Date(formField.value) : undefined}
-                                      onSelect={(date) => formField.onChange(date?.toISOString().split('T')[0])}
-                                      initialFocus
-                                    />
-                                  </PopoverContent>
-                                </Popover>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <Button
+                                    variant={"outline"}
+                                    className={cn(
+                                      "w-full justify-start text-left font-normal",
+                                      !formField.value && "text-muted-foreground"
+                                    )}
+                                  >
+                                    <CalendarIcon className="mr-2 h-4 w-4" />
+                                    {formField.value ? format(new Date(formField.value), "PPP") : <span>Pick a date</span>}
+                                  </Button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-auto p-0" align="start">
+                                  <Calendar
+                                    mode="single"
+                                    selected={formField.value ? new Date(formField.value) : undefined}
+                                    onSelect={(date) => formField.onChange(date?.toISOString().split('T')[0])}
+                                    initialFocus
+                                  />
+                                </PopoverContent>
+                              </Popover>
                             ) : (
                               <Input
                                 {...formField}
                                 type={field.type}
                                 placeholder={field.placeholder}
                                 value={formField.value || ''}
-                                onChange={ e => formField.onChange(field.type === 'number' ? e.target.valueAsNumber : e.target.value)}
+                                onChange={e => formField.onChange(field.type === 'number' ? e.target.valueAsNumber : e.target.value)}
                               />
                             )}
                           </FormControl>
@@ -298,8 +570,10 @@ export function ManagementTable<T extends ManageableEntity>({
                     />
                   ))}
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-                    <Button type="submit">Save {entityName}</Button>
+                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isLoading}>Cancel</Button>
+                    <Button type="submit" disabled={isLoading}>
+                      {isLoading ? 'Saving...' : `Save ${entityName}`}
+                    </Button>
                   </DialogFooter>
                 </form>
               </Form>
@@ -319,11 +593,11 @@ export function ManagementTable<T extends ManageableEntity>({
             {filteredData.length > 0 ? (
               filteredData.map((item) => (
                 <TableRow key={item.id}>
-                    {columns.map((col) => (
-                        <TableCell key={`${item.id}-${String(col.accessor)}`}>
-                            {renderCellContent(item, col.accessor)}
-                        </TableCell>
-                    ))}
+                  {columns.map((col) => (
+                    <TableCell key={`${item.id}-${String(col.accessor)}`}>
+                      {renderCellContent(item, col.accessor)}
+                    </TableCell>
+                  ))}
                   <TableCell>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
@@ -360,9 +634,9 @@ export function ManagementTable<T extends ManageableEntity>({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} className={buttonVariants({variant: "destructive"})}>
-                Continue
+            <AlertDialogCancel disabled={isLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} disabled={isLoading} className={buttonVariants({ variant: "destructive" })}>
+              {isLoading ? 'Deleting...' : 'Continue'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
