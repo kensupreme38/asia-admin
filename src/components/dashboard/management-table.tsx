@@ -119,6 +119,7 @@ export function ManagementTable<T extends ManageableEntity>({
   const [selectedItem, setSelectedItem] = React.useState<T | null>(null);
   const [itemToDelete, setItemToDelete] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
+  const [openDatePickers, setOpenDatePickers] = React.useState<Record<string, boolean>>({});
 
   const formSchema = getSchema(entityName);
 
@@ -129,6 +130,7 @@ export function ManagementTable<T extends ManageableEntity>({
   const handleAddNew = () => {
     setSelectedItem(null);
     form.reset({} as T);
+    setOpenDatePickers({});
     setDialogOpen(true);
   };
 
@@ -157,6 +159,7 @@ export function ManagementTable<T extends ManageableEntity>({
     }
     
     form.reset(formData);
+    setOpenDatePickers({});
     setDialogOpen(true);
   };
 
@@ -331,6 +334,7 @@ export function ManagementTable<T extends ManageableEntity>({
 
       setDialogOpen(false);
       setSelectedItem(null);
+      setOpenDatePickers({});
       
       // Refresh the page to get updated data
       router.refresh();
@@ -532,25 +536,81 @@ export function ManagementTable<T extends ManageableEntity>({
                                 </SelectContent>
                               </Select>
                             ) : field.type === 'date' ? (
-                              <Popover>
+                              <Popover 
+                                open={openDatePickers[String(field.name)] || false}
+                                onOpenChange={(open) => setOpenDatePickers(prev => ({ ...prev, [String(field.name)]: open }))}
+                                modal={false}
+                              >
                                 <PopoverTrigger asChild>
                                   <Button
                                     variant={"outline"}
+                                    type="button"
                                     className={cn(
                                       "w-full justify-start text-left font-normal",
                                       !formField.value && "text-muted-foreground"
                                     )}
                                   >
                                     <CalendarIcon className="mr-2 h-4 w-4" />
-                                    {formField.value ? format(new Date(formField.value), "PPP") : <span>Pick a date</span>}
+                                    {formField.value ? (() => {
+                                      try {
+                                        // Parse YYYY-MM-DD string to Date object using local timezone
+                                        let dateValue: Date;
+                                        if (typeof formField.value === 'string') {
+                                          const [year, month, day] = formField.value.split('-').map(Number);
+                                          dateValue = new Date(year, month - 1, day);
+                                        } else {
+                                          dateValue = new Date(formField.value);
+                                        }
+                                        if (isNaN(dateValue.getTime())) {
+                                          return <span>Pick a date</span>;
+                                        }
+                                        return format(dateValue, "PPP");
+                                      } catch {
+                                        return <span>Pick a date</span>;
+                                      }
+                                    })() : <span>Pick a date</span>}
                                   </Button>
                                 </PopoverTrigger>
-                                <PopoverContent className="w-auto p-0" align="start">
+                                <PopoverContent 
+                                  className="w-auto p-0 z-[100]" 
+                                  align="start"
+                                  side="bottom"
+                                  sideOffset={4}
+                                  onOpenAutoFocus={(e) => e.preventDefault()}
+                                >
                                   <Calendar
                                     mode="single"
-                                    selected={formField.value ? new Date(formField.value) : undefined}
-                                    onSelect={(date) => formField.onChange(date?.toISOString().split('T')[0])}
-                                    initialFocus
+                                    selected={formField.value ? (() => {
+                                      try {
+                                        // Parse YYYY-MM-DD string to Date object using local timezone
+                                        let dateValue: Date;
+                                        if (typeof formField.value === 'string') {
+                                          const [year, month, day] = formField.value.split('-').map(Number);
+                                          dateValue = new Date(year, month - 1, day);
+                                        } else {
+                                          dateValue = new Date(formField.value);
+                                        }
+                                        return isNaN(dateValue.getTime()) ? undefined : dateValue;
+                                      } catch {
+                                        return undefined;
+                                      }
+                                    })() : undefined}
+                                    onSelect={(date) => {
+                                      if (date) {
+                                        // Format date as YYYY-MM-DD using local timezone to avoid timezone offset issues
+                                        const year = date.getFullYear();
+                                        const month = String(date.getMonth() + 1).padStart(2, '0');
+                                        const day = String(date.getDate()).padStart(2, '0');
+                                        const dateString = `${year}-${month}-${day}`;
+                                        formField.onChange(dateString);
+                                        // Close popover after selection
+                                        setTimeout(() => {
+                                          setOpenDatePickers(prev => ({ ...prev, [String(field.name)]: false }));
+                                        }, 100);
+                                      } else {
+                                        formField.onChange('');
+                                      }
+                                    }}
                                   />
                                 </PopoverContent>
                               </Popover>
@@ -570,7 +630,17 @@ export function ManagementTable<T extends ManageableEntity>({
                     />
                   ))}
                   <DialogFooter>
-                    <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isLoading}>Cancel</Button>
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => {
+                        setDialogOpen(false);
+                        setOpenDatePickers({});
+                      }} 
+                      disabled={isLoading}
+                    >
+                      Cancel
+                    </Button>
                     <Button type="submit" disabled={isLoading}>
                       {isLoading ? 'Saving...' : `Save ${entityName}`}
                     </Button>
