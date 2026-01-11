@@ -5,6 +5,8 @@ import {
   MoreHorizontal,
   PlusCircle,
   Search,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -72,7 +74,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import type { User, FormFieldConfig, ColumnConfig, AdminUser } from "@/lib/types";
-import { getSchema } from "@/lib/schemas";
+import { getSchema, resetPasswordSchema } from "@/lib/schemas";
 import { useRouter } from "next/navigation";
 import { buttonVariants } from "@/components/ui/button";
 import {
@@ -123,6 +125,8 @@ export function UserTable({ initialData, initialTotal }: UserTableProps) {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isFetching, setIsFetching] = React.useState(false);
   const [isResetPasswordOpen, setResetPasswordOpen] = React.useState(false);
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
   const [currentPage, setCurrentPage] = React.useState(1);
   const itemsPerPage = 10;
 
@@ -130,6 +134,14 @@ export function UserTable({ initialData, initialTotal }: UserTableProps) {
 
   const form = useForm<any>({
     resolver: zodResolver(formSchema as unknown as ZodSchema<any>),
+  });
+
+  const resetForm = useForm<any>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: {
+      password: '',
+      confirmPassword: '',
+    },
   });
 
   const isEditing = !!selectedItem;
@@ -160,8 +172,9 @@ export function UserTable({ initialData, initialTotal }: UserTableProps) {
 
   const handleResetPassword = (item: User) => {
     setSelectedItem(item);
-    form.reset({
+    resetForm.reset({
       password: '',
+      confirmPassword: '',
     });
     setResetPasswordOpen(true);
   };
@@ -641,6 +654,9 @@ export function UserTable({ initialData, initialTotal }: UserTableProps) {
         onOpenChange={(open) => {
           setResetPasswordOpen(open);
           if (!open) {
+            resetForm.reset();
+            setShowPassword(false);
+            setShowConfirmPassword(false);
             setTimeout(() => {
               document.body.style.pointerEvents = 'auto';
             }, 0);
@@ -654,21 +670,77 @@ export function UserTable({ initialData, initialTotal }: UserTableProps) {
               Enter a new password for {selectedItem?.name}.
             </DialogDescription>
           </DialogHeader>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onResetPassword)} className="grid gap-4 py-4">
+          <Form {...resetForm}>
+            <form onSubmit={resetForm.handleSubmit(onResetPassword)} className="grid gap-4 py-4">
               <FormField
-                control={form.control}
+                control={resetForm.control}
                 name="password"
                 render={({ field: formField }) => (
                   <FormItem>
                     <FormLabel>New Password</FormLabel>
                     <FormControl>
-                      <Input
-                        {...formField}
-                        type="password"
-                        placeholder="Enter new password"
-                        value={formField.value || ''}
-                      />
+                      <div className="relative">
+                        <Input
+                          {...formField}
+                          type={showPassword ? "text" : "password"}
+                          placeholder="Enter new password"
+                          value={formField.value || ''}
+                          className="pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowPassword(!showPassword)}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span className="sr-only">
+                            {showPassword ? "Hide password" : "Show password"}
+                          </span>
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={resetForm.control}
+                name="confirmPassword"
+                render={({ field: formField }) => (
+                  <FormItem>
+                    <FormLabel>Confirm Password</FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          {...formField}
+                          type={showConfirmPassword ? "text" : "password"}
+                          placeholder="Confirm new password"
+                          value={formField.value || ''}
+                          className="pr-10"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4 text-muted-foreground" />
+                          ) : (
+                            <Eye className="h-4 w-4 text-muted-foreground" />
+                          )}
+                          <span className="sr-only">
+                            {showConfirmPassword ? "Hide password" : "Show password"}
+                          </span>
+                        </Button>
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

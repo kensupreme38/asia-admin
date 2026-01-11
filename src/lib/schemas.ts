@@ -71,6 +71,19 @@ export const adminUserSchema = z.object({
   avatar: z.string().optional(),
 });
 
+// Reset password schema for user management dialog
+export const resetPasswordSchema = z.object({
+  password: z.string()
+    .min(8, { message: "Password must be at least 8 characters." })
+    .regex(passwordRegex, {
+      message: "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character (@$!%*?&)."
+    }),
+  confirmPassword: z.string().min(1, { message: "Please confirm your password." }),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords don't match.",
+  path: ["confirmPassword"],
+});
+
 // Login schema
 export const loginSchema = z.object({
   username: z.string().min(1, { message: "Username is required." }),
