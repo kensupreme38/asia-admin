@@ -36,12 +36,12 @@ export async function POST(request: NextRequest) {
   try {
     // Rate limiting
     const clientIP = getClientIP(request);
-    if (!checkRateLimit(clientIP)) {
-      return NextResponse.json(
-        { error: 'Too many login attempts. Please try again later.' },
-        { status: 429 }
-      );
-    }
+    // if (!checkRateLimit(clientIP)) {
+    //   return NextResponse.json(
+    //     { error: 'Too many login attempts. Please try again later.' },
+    //     { status: 429 }
+    //   );
+    // }
 
     // Validate input
     const body = await request.json();

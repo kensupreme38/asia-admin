@@ -6,12 +6,12 @@ import { adminUserSchema } from '@/lib/schemas';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     
     // Validate input (password is optional for updates)
@@ -105,12 +105,12 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
     
     // Use admin client to bypass RLS for admin operations
     const adminClient = createAdminClient();

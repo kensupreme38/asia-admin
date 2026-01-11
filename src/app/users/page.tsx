@@ -1,32 +1,17 @@
-import { ManagementTable } from "@/components/dashboard/management-table";
+import { UserTable } from "@/components/dashboard/tables/user-table";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import type { User } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
-import type { FormFieldConfig } from "@/lib/types";
-
-// Using AdminUser type fields for the form
-const userFormFields: any[] = [
-    { name: "username", label: "Username", type: "text", placeholder: "johndoe" },
-    { name: "full_name", label: "Full Name", type: "text", placeholder: "John Doe" },
-    { name: "email", label: "Email", type: "email", placeholder: "john@example.com" },
-    {
-        name: "role", label: "Role", type: "select", options: [
-            { value: "admin", label: "Admin" },
-            { value: "member", label: "Member" },
-            { value: "guest", label: "Guest" },
-        ]
-    },
-    { name: "password", label: "Password", type: "text", placeholder: "Leave empty to keep current password (when editing)" },
-];
 
 export default async function UsersPage() {
     const supabase = await createClient();
     
-    // Fetch from 'admin_users' table
-    const { data: usersData, error } = await supabase
+    // Fetch first page from 'admin_users' table
+    const { data: usersData, error, count } = await supabase
         .from('admin_users')
-        .select('id, username, full_name, email, role, created_at, is_active')
-        .order('created_at', { ascending: false });
+        .select('id, username, full_name, email, role, created_at, is_active', { count: 'exact' })
+        .order('created_at', { ascending: false })
+        .range(0, 9);
 
     const users: User[] = (usersData || []).map((user: any) => {
         // Map role from admin_users format to User type format
@@ -67,18 +52,7 @@ export default async function UsersPage() {
 
     return (
         <DashboardLayout>
-            <ManagementTable<User>
-                entityName="AdminUser"
-                initialData={users}
-                formFields={userFormFields}
-                searchField="name"
-                columns={[
-                    { accessor: "name", header: "Name" },
-                    { accessor: "email", header: "Email" },
-                    { accessor: "role", header: "Role" },
-                    { accessor: "joinDate", header: "Join Date" },
-                ]}
-            />
+            <UserTable initialData={users} initialTotal={count || 0} />
         </DashboardLayout>
     );
 }

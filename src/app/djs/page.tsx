@@ -1,23 +1,17 @@
-import { ManagementTable } from "@/components/dashboard/management-table";
+import { DJTable } from "@/components/dashboard/tables/dj-table";
 import { DashboardLayout } from "@/components/dashboard/dashboard-layout";
 import type { DJ } from "@/lib/types";
 import { createClient } from "@/lib/supabase/server";
-import type { FormFieldConfig } from "@/lib/types";
-
-const djFormFields: FormFieldConfig<DJ>[] = [
-    { name: "name", label: "DJ Name", type: "text", placeholder: "DJ Awesome" },
-    { name: "bio", label: "Biography", type: "text", placeholder: "Tell us about yourself..." },
-    { name: "country", label: "Country", type: "text", placeholder: "Singapore, Vietnam, Thailand..." },
-];
 
 export default async function DJsPage() {
     const supabase = await createClient();
-    const { data: djsData, error: djsError } = await supabase
+    const { data: djsData, error: djsError, count } = await supabase
         .from('djs')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('is_active', true)
         .eq('status', 'active')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, 9);
 
     if (djsError) {
         console.error('Error fetching DJs:', djsError);
@@ -66,19 +60,7 @@ export default async function DJsPage() {
 
     return (
         <DashboardLayout>
-                <ManagementTable<DJ>
-                    entityName="DJ"
-                    initialData={djs}
-                    formFields={djFormFields}
-                    searchField="name"
-                    columns={[
-                        { accessor: "name", header: "DJ Name" },
-                        { accessor: "country", header: "Country" },
-                        { accessor: "bio", header: "Bio" },
-                        { accessor: "votes_count", header: "Votes" },
-                        { accessor: "created_at", header: "Joined" },
-                    ]}
-                />
+            <DJTable initialData={djs} initialTotal={count || 0} />
         </DashboardLayout>
     );
 }

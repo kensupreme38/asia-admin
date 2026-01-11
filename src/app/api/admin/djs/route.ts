@@ -2,16 +2,32 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createAdminClient } from '@/lib/supabase/server';
 import { requireAuth } from '@/lib/auth/session';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     await requireAuth();
 
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const search = searchParams.get('search') || '';
+
     // Use admin client to bypass RLS for admin operations
     const supabase = createAdminClient() || await createClient();
-    const { data, error } = await supabase
+    
+    let query = supabase
       .from('djs')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .select('*', { count: 'exact' });
+
+    if (search) {
+      query = query.or(`name.ilike.%${search}%,bio.ilike.%${search}%,country.ilike.%${search}%`);
+    }
+
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (error) {
       console.error('Error fetching DJs:', error);
@@ -21,7 +37,36 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json(data || []);
+    // Fetch vote counts for these DJs
+    const djIds = (data || []).map((dj: any) => dj.id);
+    const { data: votesData, error: votesError } = await supabase
+      .from('votes')
+      .select('dj_id')
+      .in('dj_id', djIds);
+
+    if (votesError) {
+      console.error('Error fetching votes:', votesError);
+    }
+
+    const votesCountMap = new Map<number, number>();
+    if (votesData) {
+      votesData.forEach((vote: any) => {
+        const count = votesCountMap.get(vote.dj_id) || 0;
+        votesCountMap.set(vote.dj_id, count + 1);
+      });
+    }
+
+    const djsWithVotes = (data || []).map((dj: any) => ({
+      ...dj,
+      votes_count: votesCountMap.get(dj.id) || 0,
+    }));
+
+    return NextResponse.json({
+      data: djsWithVotes,
+      total: count || 0,
+      page,
+      limit
+    });
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
       return NextResponse.json(

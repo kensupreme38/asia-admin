@@ -4,19 +4,19 @@ import { requireAuth } from '@/lib/auth/session';
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { 
       name, 
       full_name, 
       email, 
       phone, 
-      dateOfBirth, 
+      date_of_birth, 
       gender, 
       address, 
       referral_code,
@@ -70,7 +70,7 @@ export async function PUT(
     }
     if (email !== undefined) updateData.email = email || null;
     if (phone !== undefined) updateData.phone = phone || null;
-    if (dateOfBirth !== undefined) updateData.date_of_birth = dateOfBirth || null;
+    if (date_of_birth !== undefined) updateData.date_of_birth = date_of_birth || null;
     if (gender !== undefined) updateData.gender = gender || null;
     if (address !== undefined) updateData.address = address || null;
     if (referral_code !== undefined) updateData.referral_code = referral_code || null;
@@ -110,12 +110,12 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     await requireAuth();
 
-    const { id } = params;
+    const { id } = await params;
     console.log(`[DELETE EMPLOYEE] Received delete request for ID: ${id}`);
     
     // Use admin client to bypass RLS for admin operations

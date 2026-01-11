@@ -4,16 +4,32 @@ import { hashPassword } from '@/lib/auth/password';
 import { requireAuth } from '@/lib/auth/session';
 import { adminUserSchema } from '@/lib/schemas';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     await requireAuth();
 
+    const { searchParams } = new URL(request.url);
+    const page = parseInt(searchParams.get('page') || '1');
+    const limit = parseInt(searchParams.get('limit') || '10');
+    const search = searchParams.get('search') || '';
+
     // Use admin client to bypass RLS for admin operations
     const supabase = createAdminClient() || await createClient();
-    const { data, error } = await supabase
+    
+    let query = supabase
       .from('admin_users')
-      .select('id, username, full_name, email, role, permissions, is_active, last_login, created_at, updated_at')
-      .order('created_at', { ascending: false });
+      .select('id, username, full_name, email, role, permissions, is_active, last_login, created_at, updated_at', { count: 'exact' });
+
+    if (search) {
+      query = query.or(`username.ilike.%${search}%,full_name.ilike.%${search}%,email.ilike.%${search}%`);
+    }
+
+    const from = (page - 1) * limit;
+    const to = from + limit - 1;
+
+    const { data, error, count } = await query
+      .order('created_at', { ascending: false })
+      .range(from, to);
 
     if (error) {
       return NextResponse.json(
@@ -22,7 +38,12 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json(data || []);
+    return NextResponse.json({
+      data: data || [],
+      total: count || 0,
+      page,
+      limit
+    });
   } catch (error: any) {
     if (error.message === 'Unauthorized') {
       return NextResponse.json(
