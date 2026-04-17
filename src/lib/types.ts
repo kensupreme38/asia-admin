@@ -49,6 +49,27 @@ export type DJ = {
   performanceCount?: number; // Alias for votes_count
 };
 
+export type Venue = {
+  id: string;
+  name: string;
+  slug?: string;
+  main_image_url?: string;
+  images?: string[];
+  map_embed_url?: string;
+  category?: string;
+  address?: string;
+  price?: string;
+  country?: string;
+  /** Matches client CountrySelector city ids (e.g. Ho Chi Minh City) */
+  city?: string;
+  phone?: string;
+  hours?: string;
+  description?: string;
+  status?: string;
+  created_at?: string;
+  updated_at?: string;
+};
+
 // A generic type for our entities that have an 'id' and 'avatar'
 export type ManageableEntity = { id: string; avatar: string } & Record<string, any>;
 

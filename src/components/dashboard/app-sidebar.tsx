@@ -5,6 +5,7 @@ import {
   Users,
   Briefcase,
   Music,
+  Building2,
   LogOut,
   LayoutDashboard,
   UserCog,
@@ -56,6 +57,11 @@ const menuItems = [
     title: "DJs",
     url: "/djs",
     icon: Music,
+  },
+  {
+    title: "KTV Venues",
+    url: "/venues",
+    icon: Building2,
   },
 ]
 

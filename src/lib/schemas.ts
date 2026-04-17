@@ -51,6 +51,24 @@ export const djSchema = z.object({
   performanceCount: z.number().optional(),
 });
 
+export const venueSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().min(2, { message: "Venue name must be at least 2 characters." }),
+  slug: z.string().optional(),
+  main_image_url: z.string().url({ message: "Please enter a valid image URL." }).optional().or(z.literal("")),
+  images: z.string().optional().or(z.literal("")),
+  map_embed_url: z.string().optional().or(z.literal("")),
+  category: z.string().min(1, { message: "Category is required." }),
+  address: z.string().optional().or(z.literal("")),
+  price: z.string().optional().or(z.literal("")),
+  country: z.string().optional().or(z.literal("")),
+  city: z.string().optional().or(z.literal("")),
+  phone: z.string().optional().or(z.literal("")),
+  hours: z.string().optional().or(z.literal("")),
+  description: z.string().optional().or(z.literal("")),
+  status: z.enum(["active", "inactive", "draft"]).optional(),
+});
+
 // Password policy: at least 8 characters, 1 uppercase, 1 lowercase, 1 number, 1 special char
 const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
 
@@ -98,6 +116,8 @@ export function getSchema(entityName: string) {
       return employeeSchema;
     case 'DJ':
       return djSchema;
+    case 'Venue':
+      return venueSchema;
     case 'AdminUser':
       return adminUserSchema;
     default:
